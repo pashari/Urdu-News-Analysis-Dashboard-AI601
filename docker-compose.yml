@@ -1,0 +1,179 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:13
+    container_name: postgres
+    environment:
+      POSTGRES_USER: affan
+      POSTGRES_PASSWORD: pass123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init/postgres-init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - scraper_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U affan -d airflow_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  scraper_labeled:
+    build:
+      context: .
+      dockerfile: Dockerfile.scraper
+    image: scraper_labeled:latest
+    container_name: scraper_labeled
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - scraper_network
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_DB=news_db
+      - POSTGRES_USER=affan
+      - POSTGRES_PASSWORD=pass123
+
+  fastapi:
+    build:
+      context: .
+      dockerfile: Dockerfile.fastapi
+    image: fastapi_service
+    container_name: fastapi
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+    networks:
+      - scraper_network
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_DB=news_db
+      - POSTGRES_USER=affan
+      - POSTGRES_PASSWORD=pass123
+
+  ml_service:
+    build:
+      context: .
+      dockerfile: Dockerfile.ml
+    image: ml_service
+    container_name: ml_trainer
+    depends_on:
+      - postgres
+      - mlflow
+    networks:
+      - scraper_network
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_DB=news_db
+      - POSTGRES_USER=affan
+      - POSTGRES_PASSWORD=pass123
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+
+  mlflow:
+    build:
+      context: .
+      dockerfile: Dockerfile.mlflow
+    container_name: mlflow
+    ports:
+      - "5000:5000"
+    environment:
+      - BACKEND_STORE_URI=postgresql://affan:pass123@postgres:5432/news_db
+      - ARTIFACT_ROOT=/mlflow/mlruns
+    command: mlflow server --backend-store-uri postgresql://affan:pass123@postgres:5432/news_db --default-artifact-root /mlflow/mlruns --host 0.0.0.0 --port 5000
+    volumes:
+      - ./mlruns:/mlflow/mlruns
+    depends_on:
+      - postgres
+    networks:
+      - scraper_network
+
+  streamlit:
+    build:
+      context: .
+      dockerfile: Dockerfile.streamlit
+    image: streamlit_dashboard
+    container_name: streamlit
+    ports:
+      - "8501:8501"
+    depends_on:
+      - fastapi
+    networks:
+      - scraper_network
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_DB=news_db
+      - POSTGRES_USER=affan
+      - POSTGRES_PASSWORD=pass123
+
+  airflow-init:
+    image: apache/airflow:2.5.1
+    container_name: airflow-init
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://affan:pass123@postgres:5432/airflow_db
+      - AIRFLOW__CORE__FERNET_KEY=46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLbfzqDDho=
+      - AIRFLOW__CORE__LOAD_EXAMPLES=false
+    volumes:
+      - ./wait-for-postgres.sh:/wait-for-postgres.sh
+    command: >
+      bash -c "/wait-for-postgres.sh && 
+               pip install apache-airflow-providers-docker && 
+               airflow db init && 
+               airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com"
+    networks:
+      - scraper_network
+
+  airflow-webserver:
+    image: apache/airflow:2.5.1
+    container_name: airflow-webserver
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://affan:pass123@postgres:5432/airflow_db
+      - AIRFLOW__CORE__FERNET_KEY=46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLbfzqDDho=
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "8080:8080"
+    command: webserver
+    networks:
+      - scraper_network
+
+  airflow-scheduler:
+    image: apache/airflow:2.5.1
+    container_name: airflow-scheduler
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://affan:pass123@postgres:5432/airflow_db
+      - AIRFLOW__CORE__FERNET_KEY=46BKJoQYlPPOexq0OhDZnIlNepKFf87WFwLbfzqDDho=
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: scheduler
+    networks:
+      - scraper_network
+
+volumes:
+  postgres_data:
+  mlruns:
+
+networks:
+  scraper_network:
+    name: scraper_network
+    external: true
+

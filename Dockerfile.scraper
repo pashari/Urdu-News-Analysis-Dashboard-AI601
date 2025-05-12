@@ -1,0 +1,25 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y gcc libpq-dev && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+COPY requirements.scraper.txt .
+RUN pip install --no-cache-dir -r requirements.scraper.txt
+
+# UrduHack pretrained resources
+RUN python -c "import urduhack; urduhack.download()"
+
+# Copy scraper code
+COPY scraper/scrapper.py .
+COPY scraper/cleaner.py .
+COPY scraper/stopwords-ur.txt .
+
+ENV TF_CPP_MIN_LOG_LEVEL=3
+ENV TF_ENABLE_ONEDNN_OPTS=0
+ENV PYTHONWARNINGS="ignore"
+
+# Entry point handled by Airflow, so no CMD
+

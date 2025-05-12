@@ -37,7 +37,7 @@ Airflow DAG (scraper → cleaner → model trainer → streamlit restart)
 ### 1. Clone the repo
 
 ```bash
-git clone https://github.com/your-username/urdu-news-classification-pipeline.git
+git clone https://github.com/pashari/Urdu-News-Analysis-Dashboard-AI601.git
 cd urdu-news-classification-pipeline
 ```
 

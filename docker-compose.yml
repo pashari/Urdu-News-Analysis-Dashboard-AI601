@@ -64,6 +64,8 @@ services:
     depends_on:
       - postgres
       - mlflow
+    volumes:
+      - ./mlruns:/mlflow/mlruns
     networks:
       - scraper_network
     environment:
@@ -72,6 +74,7 @@ services:
       - POSTGRES_USER=affan
       - POSTGRES_PASSWORD=pass123
       - MLFLOW_TRACKING_URI=http://mlflow:5000
+
 
   mlflow:
     build:

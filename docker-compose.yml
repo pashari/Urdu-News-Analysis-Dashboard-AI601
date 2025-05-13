@@ -111,6 +111,7 @@ services:
       - POSTGRES_DB=news_db
       - POSTGRES_USER=affan
       - POSTGRES_PASSWORD=pass123
+      - FASTAPI_URL=http://fastapi:8000/inference
 
   airflow-init:
     image: apache/airflow:2.5.1

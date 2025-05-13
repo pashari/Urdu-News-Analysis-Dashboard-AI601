@@ -31,7 +31,7 @@ def get_cleaned_data():
 @app.get("/inference")
 def get_predictions():
     conn = get_connection()
-    df = pd.read_sql("SELECT * FROM predictions ORDER BY id DESC LIMIT 100;", conn)
+    df = pd.read_sql("SELECT * FROM predictions ORDER BY RANDOM() LIMIT 100;", conn)
     conn.close()
     return df.to_dict(orient="records")
 
